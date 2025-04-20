@@ -3,11 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 )
 
 func main() {
-	// urlFlag := flag.String("u", "", "The URL to connect to.")
-	// searchFlag := flag.String("s", "", "The search term to look for.")
+	urlFlag := flag.String("u", "", "The URL to connect to.")
+	searchFlag := flag.String("s", "", "The search term to look for.")
 	helpFlag := flag.Bool("h", false, "Display help information.")
 
 	flag.Parse()
@@ -20,6 +21,36 @@ func main() {
 		return
 	}
 
-	
+	if *urlFlag != "" {
+		response, err := makeRequest(*urlFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 
+		fmt.Println(response)
+		return
+	}
+
+	if *searchFlag != "" {
+		response, err := searchTerm(*searchFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println(response)
+		return
+	}
+}
+
+
+func makeRequest(url string) (string, error) {
+	fmt.Println(url)
+	return "", nil
+}
+
+func searchTerm(term string) (string, error) {
+	fmt.Println(term)
+	return "", nil
 }
