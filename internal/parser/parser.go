@@ -171,7 +171,6 @@ func FindNextSibling(n *html.Node) *html.Node {
 	return nil
 }
 
-// Helper function to find element by class
 func FindElementByClass(n *html.Node, className string) *html.Node {
 	if n == nil {
 		return nil

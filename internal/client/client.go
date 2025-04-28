@@ -12,11 +12,11 @@ import (
 	"strings"
 )
 
-func MakeRequest(url string) (string, error) {
-	return MakeRequestRaw(url, true)
-}
+// func MakeRequest(url string) (string, error) {
+// 	return MakeRequestRaw(url, true)
+// }
 
-func MakeRequestRaw(url string, processHtml bool) (string, error) {
+func MakeRequest(url string, processHtml bool) (string, error) {
 	scheme, host, path, port, err := ParseURL(url)
 	if err != nil {
 		return "", err
@@ -123,7 +123,7 @@ func MakeRequestRaw(url string, processHtml bool) (string, error) {
 				}
 				
 				// Recursively follow the redirect
-				return MakeRequestRaw(location, processHtml)
+				return MakeRequest(location, processHtml)
 			}
 		}
 		
