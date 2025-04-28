@@ -9,12 +9,19 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
 
 	"golang.org/x/net/html"
 )
+
+type SearchResult struct {
+	Title       string
+	URL         string
+	Description string
+}
 
 func main() {
 	urlFlag := flag.String("u", "", "The URL to connect to.")
@@ -43,13 +50,16 @@ func main() {
 	}
 
 	if *searchFlag != "" {
-		response, err := searchTerm(*searchFlag)
+		results, err := searchTerm(*searchFlag)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-
-		fmt.Println(response)
+	
+		// Format the results like in the project
+		for i, result := range results {
+			fmt.Printf("%d. %s\n   URL: %s\n\n", i+1, result.Title, result.URL)
+		}
 		return
 	}
 }
@@ -90,7 +100,65 @@ func parseURL(rawURL string) (string, string, string, int, error) {
 	return scheme, host, path, port, nil
 }
 
-func makeRequest(url string) (string, error) {
+// func makeRequest(url string) (string, error) {
+// 	scheme, host, path, port, err := parseURL(url)
+// 	if err != nil {
+// 		return "", err
+// 	}
+
+// 	var conn io.ReadWriteCloser
+
+// 	if scheme == "https" {
+// 		tlsConfig := &tls.Config{
+// 			ServerName: host,
+// 		}
+
+// 		tlsConnection, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", host, port), tlsConfig)
+// 		if err != nil {
+// 			return "", fmt.Errorf("error connecting to %s: %v", host, err)
+// 		}
+
+// 		conn = tlsConnection
+// 	} else {
+// 		tlsConnection, err := net.Dial("tcp", fmt.Sprintf("%s:%d", host, port))
+// 		if err != nil {
+// 			return "", fmt.Errorf("error connecting to %s: %v", host, err)
+// 		}
+// 		conn = tlsConnection
+// 	}
+// 	defer conn.Close()
+
+// 	request := fmt.Sprintf("GET %s HTTP/1.1\r\n"+
+// 	"Host: %s\r\n"+
+// 	"Connection: close\r\n"+
+// 	"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36\r\n"+
+// 	"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\r\n"+
+// 	"Accept-Language: en-US,en;q=0.5\r\n\r\n", path, host)
+
+// 	_, err = conn.Write([]byte(request))
+// 	if err != nil {
+// 		return "", fmt.Errorf("failed to send request: %v", err)
+// 	}
+
+// 	var response strings.Builder
+// 	reader := bufio.NewReader(conn)
+
+// 	for {
+// 		line, err := reader.ReadString('\n')
+// 		if err != nil {
+// 			if err == io.EOF {
+// 				// We've reached the end of the response
+// 				break
+// 			}
+// 			return "", fmt.Errorf("error reading response: %v", err)
+// 		}
+// 		response.WriteString(line)
+// 	}
+
+// 	return processResponse(response.String()), nil
+// }
+
+func makeRequestRaw(url string, processHtml bool) (string, error) {
 	scheme, host, path, port, err := parseURL(url)
 	if err != nil {
 		return "", err
@@ -118,8 +186,12 @@ func makeRequest(url string) (string, error) {
 	}
 	defer conn.Close()
 
-	// request := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\nUser-Agent: go2web/1.0\r\nAccept: text/html,application/json\r\n\r\n", path, host)
-	request := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36\r\nAccept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\r\nAccept-Language: en-US,en;q=0.5\r\n\r\n", path, host)
+	request := fmt.Sprintf("GET %s HTTP/1.1\r\n"+
+	"Host: %s\r\n"+
+	"Connection: close\r\n"+
+	"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36\r\n"+
+	"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\r\n"+
+	"Accept-Language: en-US,en;q=0.5\r\n\r\n", path, host)
 
 	_, err = conn.Write([]byte(request))
 	if err != nil {
@@ -141,8 +213,28 @@ func makeRequest(url string) (string, error) {
 		response.WriteString(line)
 	}
 
+	// If we don't want to process the HTML, extract the body and return it
+	if !processHtml {
+		rawResponse := response.String()
+		parts := strings.SplitN(rawResponse, "\r\n\r\n", 2)
+		if len(parts) < 2 {
+			parts = strings.SplitN(rawResponse, "\n\n", 2)
+			if len(parts) < 2 {
+				return rawResponse, nil
+			}
+		}
+		return parts[1], nil
+	}
+
+	// Otherwise process as usual
 	return processResponse(response.String()), nil
 }
+
+// Original makeRequest function - keep this for normal requests
+func makeRequest(url string) (string, error) {
+	return makeRequestRaw(url, true)
+}
+
 
 func processResponse(rawResponse string) string {
 	parts := strings.SplitN(rawResponse, "\r\n\r\n", 2)
@@ -250,222 +342,253 @@ func extractText(n *html.Node, buf *bytes.Buffer) {
 	}
 }
 
-func searchTerm(term string) (string, error) {
-    // Try a simpler search engine that might be easier to scrape
-    searchURL := "https://lite.duckduckgo.com/lite?q=" + strings.ReplaceAll(term, " ", "+")
-    
-    fmt.Fprintf(os.Stderr, "Searching for: %s\n", term)
-    fmt.Fprintf(os.Stderr, "Search URL: %s\n", searchURL)
-    
-    response, err := makeRequest(searchURL)
-    if err != nil {
-        return "", fmt.Errorf("search failed: %v", err)
-    }
-    
-    // Print first 200 characters of response for debugging
-    fmt.Fprintf(os.Stderr, "Response preview (first 200 chars):\n%s\n", response[:min(200, len(response))])
-    
-    // Extract the top 10 results using HTML parser
-    doc, err := html.Parse(strings.NewReader(response))
-    if err != nil {
-        return "", fmt.Errorf("failed to parse search results: %v", err)
-    }
-    
-    // Find all search results
-    var results []string
-    count := 0
-    
-    // Function to recursively find search result elements for lite.duckduckgo.com
-    var findResults func(*html.Node)
-    findResults = func(n *html.Node) {
-        if count >= 10 {
-            return
-        }
-        
-        // For lite.duckduckgo.com, look for <a> elements inside <td> elements
-        if n.Type == html.ElementNode && n.Data == "a" {
-            // Filter for links that are likely search results
-            isResultLink := false
-            var href string
-            
-            for _, attr := range n.Attr {
-                if attr.Key == "href" && strings.HasPrefix(attr.Val, "http") {
-                    isResultLink = true
-                    href = attr.Val
-                    break
-                }
-            }
-            
-            if isResultLink && n.FirstChild != nil && n.FirstChild.Type == html.TextNode {
-                title := strings.TrimSpace(n.FirstChild.Data)
-                if title != "" && len(title) > 3 && !strings.HasPrefix(title, "More") {
-                    // Format the result
-                    result := fmt.Sprintf("%d. %s (%s)", count+1, title, href)
-                    results = append(results, result)
-                    count++
-                }
-            }
-        }
-        
-        // Continue traversing the DOM
-        for c := n.FirstChild; c != nil; c = c.NextSibling {
-            findResults(c)
-        }
-    }
-    
-    findResults(doc)
-    
-    // If we didn't find any results with the above method, try with the original algorithm
-    if len(results) == 0 {
-        fmt.Fprintf(os.Stderr, "No results found with lite version algorithm, trying original...\n")
-        
-        // Try with the original DuckDuckGo HTML structure
-        var findOriginalResults func(*html.Node)
-        findOriginalResults = func(n *html.Node) {
-            if count >= 10 {
-                return
-            }
-            
-            // Look for result containers
-            if n.Type == html.ElementNode && n.Data == "div" {
-                // Check if this is a result div
-                isResult := false
-                for _, attr := range n.Attr {
-                    if attr.Key == "class" && (strings.Contains(attr.Val, "result__body") || 
-                                              strings.Contains(attr.Val, "result") || 
-                                              strings.Contains(attr.Val, "web-result")) {
-                        isResult = true
-                        break
-                    }
-                }
-                
-                if isResult {
-                    var title string
-                    
-                    // Extract title text from this div and its children
-                    var extractTitle func(*html.Node)
-                    extractTitle = func(node *html.Node) {
-                        if node.Type == html.TextNode && len(strings.TrimSpace(node.Data)) > 3 {
-                            title = strings.TrimSpace(node.Data)
-                            return
-                        }
-                        
-                        for c := node.FirstChild; c != nil; c = c.NextSibling {
-                            if title == "" {
-                                extractTitle(c)
-                            }
-                        }
-                    }
-                    
-                    extractTitle(n)
-                    
-                    if title != "" {
-                        results = append(results, fmt.Sprintf("%d. %s", count+1, title))
-                        count++
-                    }
-                }
-            }
-            
-            // Continue traversing the DOM
-            for c := n.FirstChild; c != nil; c = c.NextSibling {
-                findOriginalResults(c)
-            }
-        }
-        
-        count = 0
-        findOriginalResults(doc)
-    }
-    
-    // Simplest fallback - just find any links
-    if len(results) == 0 {
-        fmt.Fprintf(os.Stderr, "Still no results, trying generic link extraction...\n")
-        
-        var findLinks func(*html.Node)
-        findLinks = func(n *html.Node) {
-            if count >= 10 {
-                return
-            }
-            
-            if n.Type == html.ElementNode && n.Data == "a" {
-                var text string
-                var href string
-                
-                // Get href attribute
-                for _, attr := range n.Attr {
-                    if attr.Key == "href" {
-                        href = attr.Val
-                        break
-                    }
-                }
-                
-                // Get link text
-                if n.FirstChild != nil && n.FirstChild.Type == html.TextNode {
-                    text = strings.TrimSpace(n.FirstChild.Data)
-                }
-                
-                // Skip empty links, short links, or likely navigation
-                if text != "" && len(text) > 5 && !strings.HasPrefix(text, "More") && 
-                   !strings.HasPrefix(text, "Next") && href != "" {
-                    results = append(results, fmt.Sprintf("%d. %s", count+1, text))
-                    count++
-                }
-            }
-            
-            for c := n.FirstChild; c != nil; c = c.NextSibling {
-                findLinks(c)
-            }
-        }
-        
-        count = 0
-        findLinks(doc)
-    }
-    
-    // If still no results, try to extract any meaningful text
-    if len(results) == 0 {
-        fmt.Fprintf(os.Stderr, "No links found, extracting any meaningful text...\n")
-        
-        var texts []string
-        var extractMeaningfulText func(*html.Node)
-        extractMeaningfulText = func(n *html.Node) {
-            if len(texts) >= 10 {
-                return
-            }
-            
-            if n.Type == html.TextNode {
-                text := strings.TrimSpace(n.Data)
-                if len(text) > 20 && !strings.Contains(text, "DuckDuckGo") && 
-                   !strings.Contains(text, "Privacy") && !strings.HasPrefix(text, "!") {
-                    texts = append(texts, text)
-                }
-            }
-            
-            for c := n.FirstChild; c != nil; c = c.NextSibling {
-                extractMeaningfulText(c)
-            }
-        }
-        
-        extractMeaningfulText(doc)
-        
-        for i, text := range texts {
-            if i < 10 {
-                results = append(results, fmt.Sprintf("%d. %s", i+1, text))
-            }
-        }
-    }
-    
-    // If still no results, return a helpful message
-    if len(results) == 0 {
-        return "No search results found. The response from the search engine might be:\n1. Empty due to blocking of automated requests\n2. In a format this program can't parse\n\nTry with a more specific search term or using the -u option with a specific URL.", nil
-    }
-    
-    // Join the results with newlines
-    return strings.Join(results, "\n"), nil
+func searchTerm(term string) ([]SearchResult, error) {
+	// Prepare the search URL using DuckDuckGo lite
+	encodedTerm := url.QueryEscape(term)
+	searchURL := fmt.Sprintf("https://lite.duckduckgo.com/lite?q=%s", encodedTerm)
+	
+	// Make the request
+	response, err := makeRequestRaw(searchURL, false)
+	if err != nil {
+		return nil, fmt.Errorf("search request failed: %v", err)
+	}
+	
+	// Parse the HTML and extract search results
+	doc, err := html.Parse(strings.NewReader(response))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse search results: %v", err)
+	}
+	
+	// Extract the results using techniques from the working version
+	results := parseSearchResults(doc)
+	
+	// Limit to 10 results
+	if len(results) > 10 {
+		results = results[:10]
+	}
+	
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no search results found")
+	}
+	
+	return results, nil
 }
 
-// Helper function to get minimum of two integers
-func min(a, b int) int {
-    if a < b {
-        return a
-    }
-    return b
+
+func parseSearchResults(doc *html.Node) []SearchResult {
+	var results []SearchResult
+	
+	var findResultLinks func(*html.Node)
+	findResultLinks = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "a" {
+			isResultLink := false
+			var href string
+			
+			// Check if it's a result link
+			for _, attr := range n.Attr {
+				if attr.Key == "class" && attr.Val == "result-link" {
+					isResultLink = true
+				}
+				if attr.Key == "href" {
+					href = attr.Val
+				}
+			}
+			
+			if isResultLink && href != "" {
+				// Extract title
+				title := extractTextContent(n)
+				
+				// Find parent <tr> and extract description and URL from adjacent rows
+				resultRow := findParentByTagName(n, "tr")
+				if resultRow != nil {
+					var description, originalURL string
+					
+					// Look for snippet in next row
+					nextRow := findNextSibling(resultRow)
+					if nextRow != nil {
+						snippetCell := findElementByClass(nextRow, "result-snippet")
+						if snippetCell != nil {
+							description = extractTextContent(snippetCell)
+						}
+					}
+					
+					// Look for URL in the row after that
+					urlRow := findNextSibling(nextRow)
+					if urlRow != nil {
+						linkTextSpan := findElementByClass(urlRow, "link-text")
+						if linkTextSpan != nil {
+							originalURL = extractTextContent(linkTextSpan)
+						}
+					}
+					
+					// Extract actual URL from DuckDuckGo redirect URL
+					actualURL := extractActualURL(href)
+					if actualURL == "" {
+						actualURL = originalURL
+					}
+					
+					if title != "" && actualURL != "" {
+						results = append(results, SearchResult{
+							Title:       title,
+							URL:         actualURL,
+							Description: description,
+						})
+					}
+				}
+			}
+		}
+		
+		// Continue traversing the tree
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			findResultLinks(c)
+		}
+	}
+	
+	findResultLinks(doc)
+		// Fallback method if no results found with the primary method
+	if len(results) == 0 {
+		var findLinks func(*html.Node)
+		findLinks = func(n *html.Node) {
+			if n.Type == html.ElementNode && n.Data == "a" {
+				var href string
+				
+				// Extract href
+				for _, attr := range n.Attr {
+					if attr.Key == "href" && strings.HasPrefix(attr.Val, "http") {
+						href = attr.Val
+						break
+					}
+				}
+				
+				if href != "" && n.FirstChild != nil {
+					title := extractTextContent(n)
+					
+					// Skip certain common non-result links
+					if title != "" && len(title) > 5 && 
+						!strings.HasPrefix(title, "More") && 
+						!strings.HasPrefix(title, "Next") {
+						results = append(results, SearchResult{
+							Title: title,
+							URL:   href,
+						})
+					}
+				}
+			}
+			
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				findLinks(c)
+			}
+		}
+		
+		findLinks(doc)
+	}
+	
+	return results
+}
+
+func extractTextContent(n *html.Node) string {
+	if n == nil {
+		return ""
+	}
+	
+	var sb strings.Builder
+	
+	var extract func(*html.Node)
+	extract = func(node *html.Node) {
+		if node.Type == html.TextNode {
+			sb.WriteString(node.Data)
+		}
+		
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			extract(c)
+		}
+	}
+	
+	extract(n)
+	return strings.TrimSpace(sb.String())
+}
+
+// Helper function to find parent by tag name
+func findParentByTagName(n *html.Node, tagName string) *html.Node {
+	if n == nil {
+		return nil
+	}
+	
+	current := n.Parent
+	for current != nil {
+		if current.Type == html.ElementNode && current.Data == tagName {
+			return current
+		}
+		current = current.Parent
+	}
+	
+	return nil
+}
+
+// Helper function to find next sibling element
+func findNextSibling(n *html.Node) *html.Node {
+	if n == nil {
+		return nil
+	}
+	
+	current := n.NextSibling
+	for current != nil {
+		if current.Type == html.ElementNode {
+			return current
+		}
+		current = current.NextSibling
+	}
+	
+	return nil
+}
+
+// Helper function to find element by class
+func findElementByClass(n *html.Node, className string) *html.Node {
+	if n == nil {
+		return nil
+	}
+	
+	var find func(*html.Node) *html.Node
+	find = func(node *html.Node) *html.Node {
+		if node.Type == html.ElementNode {
+			for _, attr := range node.Attr {
+				if attr.Key == "class" && attr.Val == className {
+					return node
+				}
+			}
+		}
+		
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			if result := find(c); result != nil {
+				return result
+			}
+		}
+		
+		return nil
+	}
+	
+	return find(n)
+}
+
+// Helper function to extract actual URL from DuckDuckGo redirect URL
+func extractActualURL(ddgURL string) string {
+	if strings.Contains(ddgURL, "duckduckgo.com/l/?uddg=") {
+		parts := strings.Split(ddgURL, "uddg=")
+		if len(parts) > 1 {
+			encodedURL := parts[1]
+			if idx := strings.Index(encodedURL, "&"); idx > 0 {
+				encodedURL = encodedURL[:idx]
+			}
+			
+			if decodedURL, err := url.QueryUnescape(encodedURL); err == nil {
+				return decodedURL
+			}
+		}
+	}
+	
+	if !strings.HasPrefix(ddgURL, "//") {
+		return ddgURL
+	}
+	
+	return "https:" + ddgURL
 }
