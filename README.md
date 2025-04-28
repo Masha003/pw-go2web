@@ -80,3 +80,5 @@ go2web -s "golang"
 This will show the top 10 search results and allow you to open one in your browser.
 
 ## Gif with working example
+
+![alt text](<Untitled design.gif>)
