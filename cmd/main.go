@@ -43,7 +43,7 @@ func printHelp() {
 }
 
 func handleURLRequest(url string) {
-	response, err := client.MakeRequest(url)
+	response, err := client.MakeRequest(url, true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
