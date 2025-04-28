@@ -241,33 +241,98 @@ func makeRequestRaw(url string, processHtml bool) (string, error) {
 	var response strings.Builder
 	reader := bufio.NewReader(conn)
 
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				// We've reached the end of the response
-				break
-			}
-			return "", fmt.Errorf("error reading response: %v", err)
-		}
-		response.WriteString(line)
+	// Read the response headers first
+	var statusCode int
+	var statusLine string
+	var headers = make(map[string]string)
+	
+	// Read the status line
+	statusLine, err = reader.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("error reading status line: %v", err)
+	}
+	response.WriteString(statusLine)
+	
+	// Extract status code
+	statusMatch := regexp.MustCompile(`HTTP/[\d.]+\s+(\d+)`).FindStringSubmatch(statusLine)
+	if len(statusMatch) > 1 {
+		statusCode, _ = strconv.Atoi(statusMatch[1])
 	}
 
-	// If we don't want to process the HTML, extract the body and return it
-	if !processHtml {
-		rawResponse := response.String()
-		parts := strings.SplitN(rawResponse, "\r\n\r\n", 2)
-		if len(parts) < 2 {
-			parts = strings.SplitN(rawResponse, "\n\n", 2)
-			if len(parts) < 2 {
-				return rawResponse, nil
+		// Read headers
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return "", fmt.Errorf("error reading header: %v", err)
+			}
+			response.WriteString(line)
+			
+			// Store headers in a map
+			line = strings.TrimSpace(line)
+			if line == "" {
+				break // End of headers
+			}
+			
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				headerName := strings.TrimSpace(parts[0])
+				headerValue := strings.TrimSpace(parts[1])
+				headers[strings.ToLower(headerName)] = headerValue
 			}
 		}
-		return parts[1], nil
-	}
-
-	// Otherwise process as usual
-	return processResponse(response.String()), nil
+		
+		// Check for redirection (status codes 301, 302, 303, 307, 308)
+		if statusCode >= 300 && statusCode < 400 {
+			location, ok := headers["location"]
+			if ok {
+				fmt.Printf("Following redirect to: %s\n", location)
+				
+				// Handle relative URLs
+				if !strings.HasPrefix(location, "http") {
+					if strings.HasPrefix(location, "/") {
+						// Absolute path
+						location = fmt.Sprintf("%s://%s%s", scheme, host, location)
+					} else {
+						// Relative path
+						basePath := path
+						if idx := strings.LastIndex(basePath, "/"); idx != -1 {
+							basePath = basePath[:idx+1]
+						} else {
+							basePath = "/"
+						}
+						location = fmt.Sprintf("%s://%s%s%s", scheme, host, basePath, location)
+					}
+				}
+				
+				// Recursively follow the redirect
+				return makeRequestRaw(location, processHtml)
+			}
+		}
+		
+		// Read the body
+		var bodyBuilder strings.Builder
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					// We've reached the end of the response
+					break
+				}
+				return "", fmt.Errorf("error reading response: %v", err)
+			}
+			bodyBuilder.WriteString(line)
+		}
+		
+		// Append the body to the full response
+		response.WriteString(bodyBuilder.String())
+		
+		// If we don't want to process the HTML, extract the body and return it
+		if !processHtml {
+			return bodyBuilder.String(), nil
+		}
+	
+		// Otherwise process as usual
+		return processResponse(response.String()), nil
 }
 
 // Original makeRequest function - keep this for normal requests
