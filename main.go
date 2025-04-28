@@ -11,7 +11,10 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -56,12 +59,49 @@ func main() {
 			os.Exit(1)
 		}
 	
-		// Format the results like in the project
+		// Format the results
 		for i, result := range results {
 			fmt.Printf("%d. %s\n   URL: %s\n\n", i+1, result.Title, result.URL)
 		}
+		
+		// Ask user if they want to open one of the results
+		fmt.Print("Enter a number to open a result (1-10), or press Enter to exit: ")
+		reader := bufio.NewReader(os.Stdin)
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+		
+		if input != "" {
+			// Try to convert the input to a number
+			num, err := strconv.Atoi(input)
+			if err != nil || num < 1 || num > len(results) {
+				fmt.Println("Invalid selection.")
+				return
+			}
+			
+			// Open the URL in the default browser
+			selectedURL := results[num-1].URL
+			fmt.Printf("Opening: %s\n", selectedURL)
+			openBrowser(selectedURL)
+		}
+		
 		return
 	}
+}
+
+// openBrowser opens the specified URL in the user's default browser
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+	
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin": // macOS
+		cmd = exec.Command("open", url)
+	default: // Linux and others
+		cmd = exec.Command("xdg-open", url)
+	}
+	
+	return cmd.Start()
 }
 
 func parseURL(rawURL string) (string, string, string, int, error) {
