@@ -2,6 +2,7 @@ package search
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"pw-go2web/internal/client"
 	"pw-go2web/internal/parser"
@@ -114,42 +115,9 @@ func ParseSearchResults(doc *html.Node) []models.SearchResult {
 	}
 	
 	findResultLinks(doc)
-		// Fallback method if no results found with the primary method
+	
 	if len(results) == 0 {
-		var findLinks func(*html.Node)
-		findLinks = func(n *html.Node) {
-			if n.Type == html.ElementNode && n.Data == "a" {
-				var href string
-				
-				// Extract href
-				for _, attr := range n.Attr {
-					if attr.Key == "href" && strings.HasPrefix(attr.Val, "http") {
-						href = attr.Val
-						break
-					}
-				}
-				
-				if href != "" && n.FirstChild != nil {
-					title := parser.ExtractTextContent(n)
-					
-					// Skip certain common non-result links
-					if title != "" && len(title) > 5 && 
-						!strings.HasPrefix(title, "More") && 
-						!strings.HasPrefix(title, "Next") {
-						results = append(results, models.SearchResult{
-							Title: title,
-							URL:   href,
-						})
-					}
-				}
-			}
-			
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				findLinks(c)
-			}
-		}
-		
-		findLinks(doc)
+		log.Println("No Results found.")
 	}
 	
 	return results
