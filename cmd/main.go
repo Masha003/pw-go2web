@@ -61,7 +61,7 @@ func handleSearchRequest(term string) {
 
 	// Format the results
 	for i, result := range results {
-		fmt.Printf("%d. %s\n   URL: %s\n\n", i+1, result.Title, result.URL)
+		fmt.Printf("%d. %s\n  %s\n   URL: %s\n\n", i+1, result.Title, result.Description, result.URL)
 	}
 	
 	// Ask user if they want to open one of the results
