@@ -18,7 +18,7 @@ func SearchTerm(term string) ([]models.SearchResult, error) {
 	searchURL := fmt.Sprintf("https://lite.duckduckgo.com/lite?q=%s", encodedTerm)
 	
 	// Make the request
-	response, err := client.MakeRequest(searchURL, false)
+	response, err := client.MakeRequest(searchURL, false, 0)
 	if err != nil {
 		return nil, fmt.Errorf("search request failed: %v", err)
 	}
