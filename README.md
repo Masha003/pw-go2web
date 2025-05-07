@@ -35,14 +35,12 @@ go2web allows you to:
 4. (Optional) Move the binary to your PATH for system-wide access:
 
    ```bash
-   # Linux/macOS
-   sudo mv go2web /usr/local/bin/
-
-   # Or add to PATH in your shell profile (~/.bashrc or ~/.zshrc)
-   echo 'export PATH="$PATH:$(pwd)"' >> ~/.bashrc  # For Bash
+   # Add to PATH in your shell profile (~/.bashrc or ~/.zshrc)
+   echo 'export PATH="$PATH:/full/path/to/directory"' >> ~/.bashrc
+   source ~/.bashrc
    # OR
-   echo 'export PATH="$PATH:$(pwd)"' >> ~/.zshrc   # For Zsh
-   source ~/.bashrc  # Or ~/.zshrc
+   echo 'export PATH="$PATH:/full/path/to/directory"' >> ~/.zshrc
+   source ~/.zshrc
    ```
 
    On Windows, you can add the directory to your PATH environment variable.
