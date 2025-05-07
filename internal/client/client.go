@@ -16,7 +16,13 @@ import (
 // 	return MakeRequestRaw(url, true)
 // }
 
-func MakeRequest(url string, processHtml bool) (string, error) {
+func MakeRequest(url string, processHtml bool, redirectCount int) (string, error) {
+
+	const maxRedirects = 5;
+	if redirectCount > maxRedirects {
+		return "", fmt.Errorf("Too many redirects, max number is %d", maxRedirects)
+	}
+
 	scheme, host, path, port, err := ParseURL(url)
 	if err != nil {
 		return "", err
@@ -123,7 +129,7 @@ func MakeRequest(url string, processHtml bool) (string, error) {
 				}
 				
 				// Recursively follow the redirect
-				return MakeRequest(location, processHtml)
+				return MakeRequest(location, processHtml, redirectCount+1)
 			}
 		}
 		
